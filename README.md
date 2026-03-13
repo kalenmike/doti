@@ -64,4 +64,43 @@ doti manage --config ./my_config.yaml
 
 ## Installation
 
-*(Add your installation instructions here, e.g., `pip install doti-manager`)*
+### Using uv tool (recommended)
+```bash
+# Install from git
+uv tool install git+https://github.com/anomalyco/doti.git
+
+# Or install locally (for development)
+uv tool install -e .
+
+# Or use the Makefile
+make install-tool
+```
+
+Then run:
+```bash
+doti --help
+```
+
+### From PyPI (when published)
+```bash
+pip install doti
+```
+
+### From source
+```bash
+# Clone your dotfiles repository
+git clone https://github.com/yourusername/dotfiles.git
+cd dotfiles
+
+# Install doti in development mode
+pip install -e .
+
+# Or install with uv
+uv sync
+uv pip install -e .
+```
+
+### Quick install (latest from main)
+```bash
+pip install git+https://github.com/anomalyco/doti.git
+```
