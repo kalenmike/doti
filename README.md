@@ -62,6 +62,26 @@ doti manage --config ./my_config.yaml
 
 ---
 
+### Migrating Existing Configs
+
+Have configs already scattered in your home directory? The migrate command finds them and moves them to your dotfiles repository:
+
+```bash
+doti migrate --config ./my_config.yaml
+
+```
+
+1. **Scan:** Doti finds all hidden files/directories in your home, including contents of common config directories like `.config`, `.local`, and `Library`.
+2. **Select:** Choose which configs you want to migrate.
+3. **Migrate:** Doti moves the files to your source directory and creates symlinks back to their original locations.
+
+Example: If you have `~/.bashrc` and `~/.config/nvim/` in your home, running migrate will:
+- Move `~/.bashrc` → `dotfiles/.bashrc`
+- Move `~/.config/nvim/` → `dotfiles/.config/nvim/`
+- Create symlinks at original locations
+
+---
+
 ## Installation
 
 ### Using uv tool (recommended)

@@ -117,7 +117,7 @@ class TUI:
             List of questionary Choice objects and separators.
         """
         choices: List[Union[str, questionary.Choice]] = []
-        items = list(nodes.items())
+        items = sorted(nodes.items(), key=lambda x: (not x[1].is_dir, x[0].lower()))
 
         for i, (name, node) in enumerate(items):
             is_last = i == len(items) - 1

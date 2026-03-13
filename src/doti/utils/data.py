@@ -22,6 +22,7 @@ class ConfigNode:
     Attributes:
         name: The filename or directory name.
         relative_path: Path relative to the root (source or target).
+        target_relative_path: Path relative to target, for migration purposes.
         is_dir: Whether this node is a directory.
         in_source: Whether this node exists in the source dotfiles directory.
         in_target: Whether this node exists in the target (home) directory.
@@ -33,6 +34,7 @@ class ConfigNode:
 
     name: str
     relative_path: Path
+    target_relative_path: Optional[Path] = None
     is_dir: bool = False
     in_source: bool = False
     in_target: bool = False

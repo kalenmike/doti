@@ -45,7 +45,9 @@ class TestDoti:
         test_file = source / "test.txt"
         test_file.write_text("content")
 
-        settings = SettingsManager(config=None, source=str(source))
+        config = source / "config.yaml"
+        config.write_text(f"dotfiles: {source}\nhome: {target}\n")
+        settings = SettingsManager(config=str(config), source=str(source))
         doti = Doti(settings)
 
         assert doti.exists(test_file) is True
@@ -58,7 +60,9 @@ class TestDoti:
         link = target / "link"
         link.symlink_to(test_file)
 
-        settings = SettingsManager(config=None, source=str(source))
+        config = source / "config.yaml"
+        config.write_text(f"dotfiles: {source}\nhome: {target}\n")
+        settings = SettingsManager(config=str(config), source=str(source))
         doti = Doti(settings)
 
         assert doti.exists(link) is True
@@ -67,7 +71,9 @@ class TestDoti:
         """Test exists returns False for nonexistent path."""
         source, target = temp_dirs
 
-        settings = SettingsManager(config=None, source=str(source))
+        config = source / "config.yaml"
+        config.write_text(f"dotfiles: {source}\nhome: {target}\n")
+        settings = SettingsManager(config=str(config), source=str(source))
         doti = Doti(settings)
 
         assert doti.exists(source / "nonexistent") is False
@@ -76,7 +82,9 @@ class TestDoti:
         """Test has_symlink raises error when source and target are same."""
         source, target = temp_dirs
 
-        settings = SettingsManager(config=None, source=str(source))
+        config = source / "config.yaml"
+        config.write_text(f"dotfiles: {source}\nhome: {target}\n")
+        settings = SettingsManager(config=str(config), source=str(source))
         doti = Doti(settings)
 
         with pytest.raises(ValueError, match="Source and Target cannot be the same"):
@@ -90,7 +98,9 @@ class TestDoti:
         link = target / "test.txt"
         link.symlink_to(test_file)
 
-        settings = SettingsManager(config=None, source=str(source))
+        config = source / "config.yaml"
+        config.write_text(f"dotfiles: {source}\nhome: {target}\n")
+        settings = SettingsManager(config=str(config), source=str(source))
         doti = Doti(settings)
 
         assert doti.has_symlink(test_file, link) is True
@@ -103,7 +113,9 @@ class TestDoti:
         target_file = target / "target.txt"
         target_file.write_text("different")
 
-        settings = SettingsManager(config=None, source=str(source))
+        config = source / "config.yaml"
+        config.write_text(f"dotfiles: {source}\nhome: {target}\n")
+        settings = SettingsManager(config=str(config), source=str(source))
         doti = Doti(settings)
 
         assert doti.has_symlink(source_file, target_file) is False
@@ -113,7 +125,7 @@ class TestDoti:
         source, target = temp_dirs
 
         config = source / "config.yaml"
-        config.write_text("dotfiles: .\nhome: .\n")
+        config.write_text(f"dotfiles: {source}\nhome: {target}\n")
         settings = SettingsManager(config=str(config), source=str(source))
         doti = Doti(settings)
 
@@ -124,7 +136,9 @@ class TestDoti:
         """Test backup path for hidden file."""
         source, target = temp_dirs
 
-        settings = SettingsManager(config=None, source=str(source))
+        config = source / "config.yaml"
+        config.write_text(f"dotfiles: {source}\nhome: {target}\n")
+        settings = SettingsManager(config=str(config), source=str(source))
         doti = Doti(settings)
 
         backup = doti.get_backup_path(source / ".bashrc")
@@ -134,7 +148,9 @@ class TestDoti:
         """Test backup path for directory."""
         source, target = temp_dirs
 
-        settings = SettingsManager(config=None, source=str(source))
+        config = source / "config.yaml"
+        config.write_text(f"dotfiles: {source}\nhome: {target}\n")
+        settings = SettingsManager(config=str(config), source=str(source))
         doti = Doti(settings)
 
         backup = doti.get_backup_path(source / ".config")
@@ -328,3 +344,231 @@ class TestDotiPlanCalculation:
 
         for node in plan:
             assert node.change != ChangeType.REMOVE
+
+
+class TestMigrate:
+    """Tests for the migrate functionality."""
+
+    @pytest.fixture
+    def doti_with_untracked(self):
+        """Create Doti with untracked files in target."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir) / "source"
+            target = Path(tmpdir) / "target"
+
+            source.mkdir()
+            target.mkdir()
+
+            (target / ".bashrc").write_text("bash content")
+            (target / ".config").mkdir()
+            (target / ".config" / "nvim").write_text("nvim content")
+
+            config = source / "config.yaml"
+            config.write_text(f"dotfiles: {source}\nhome: {target}\n")
+
+            settings = SettingsManager(config=str(config), source=str(source))
+            doti = Doti(settings)
+
+            yield doti, source, target
+
+    def test_get_untracked(self, doti_with_untracked):
+        """Test get_untracked returns files only in target."""
+        doti, source, target = doti_with_untracked
+
+        untracked = doti.get_untracked()
+
+        assert ".bashrc" in untracked
+        assert ".config" in untracked
+
+    def test_get_untracked_excludes_symlinks(self):
+        """Test get_untracked excludes symlinks."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir) / "source"
+            target = Path(tmpdir) / "target"
+
+            source.mkdir()
+            target.mkdir()
+
+            (source / ".bashrc").write_text("bash content")
+            (target / ".bashrc").symlink_to(source / ".bashrc")
+
+            config = source / "config.yaml"
+            config.write_text(f"dotfiles: {source}\nhome: {target}\n")
+
+            settings = SettingsManager(config=str(config), source=str(source))
+            doti = Doti(settings)
+
+            untracked = doti.get_untracked()
+            assert ".bashrc" not in untracked
+
+    def test_calculate_migrate_plan(self, doti_with_untracked):
+        """Test calculating migration plan."""
+        doti, source, target = doti_with_untracked
+
+        untracked = doti.get_untracked()
+        selected = list(untracked.values())
+
+        plan = doti.calculate_migrate_plan(untracked, selected)
+
+        assert len(plan) >= 1
+        for node in plan:
+            assert node.change == ChangeType.ADD
+
+    def test_process_migrate(self, doti_with_untracked):
+        """Test migrating files from target to source."""
+        doti, source, target = doti_with_untracked
+
+        untracked = doti.get_untracked()
+        selected = [untracked[".bashrc"]]
+
+        plan = doti.calculate_migrate_plan(untracked, selected)
+        doti.process_migrate(plan)
+
+        source_file = source / ".bashrc"
+        target_link = target / ".bashrc"
+
+        assert source_file.exists()
+        assert target_link.is_symlink()
+        assert target_link.resolve() == source_file
+
+    def test_process_migrate_directory(self, doti_with_untracked):
+        """Test migrating directory from target to source."""
+        doti, source, target = doti_with_untracked
+
+        untracked = doti.get_untracked()
+        selected = [untracked[".config"]]
+
+        plan = doti.calculate_migrate_plan(untracked, selected)
+        doti.process_migrate(plan)
+
+        source_dir = source / ".config"
+        target_link = target / ".config"
+
+        assert source_dir.is_dir()
+        assert target_link.is_symlink()
+        assert target_link.resolve() == source_dir
+
+    def test_get_untracked_includes_config_dirs(self):
+        """Test that files inside config directories are included."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir) / "source"
+            target = Path(tmpdir) / "target"
+
+            source.mkdir()
+            target.mkdir()
+
+            (target / ".bashrc").write_text("bash content")
+            (target / ".config").mkdir()
+            (target / ".config" / "nvim").write_text("nvim content")
+            (target / ".config" / "kitty").mkdir()
+            (target / ".config" / "kitty.conf").write_text("kitty config")
+
+            config = source / "config.yaml"
+            config.write_text(f"dotfiles: {source}\nhome: {target}\n")
+
+            settings = SettingsManager(config=str(config), source=str(source))
+            doti = Doti(settings)
+
+            untracked = doti.get_untracked()
+
+            assert ".bashrc" in untracked
+            assert ".config" in untracked
+            assert "nvim" in untracked[".config"].children
+            assert "kitty" in untracked[".config"].children
+            assert untracked[".config"].children["kitty.conf"] is not None
+
+    def test_get_migration_candidates_includes_files_in_source(self):
+        """Test migration candidates includes files that exist in source."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir) / "source"
+            target = Path(tmpdir) / "target"
+
+            source.mkdir()
+            target.mkdir()
+
+            (source / ".config").mkdir()
+            (source / ".config" / "nvim").write_text("existing nvim config")
+
+            (target / ".bashrc").write_text("new bash content")
+            (target / ".config").mkdir()
+            (target / ".config" / "nvim").write_text("new nvim content")
+            (target / ".config" / "kitty").mkdir()
+
+            config = source / "config.yaml"
+            config.write_text(f"dotfiles: {source}\nhome: {target}\n")
+
+            settings = SettingsManager(config=str(config), source=str(source))
+            doti = Doti(settings)
+
+            candidates = doti.get_migration_candidates()
+
+            assert ".bashrc" in candidates
+            assert ".config" in candidates
+            assert "nvim" in candidates[".config"].children
+            assert "kitty" in candidates[".config"].children
+
+    def test_process_migrate_backs_up_existing_source(self):
+        """Test migration backs up existing source files."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir) / "source"
+            target = Path(tmpdir) / "target"
+
+            source.mkdir()
+            target.mkdir()
+
+            (source / ".bashrc").write_text("original content")
+
+            (target / ".bashrc").write_text("new content")
+
+            config = source / "config.yaml"
+            config.write_text(f"dotfiles: {source}\nhome: {target}\n")
+
+            settings = SettingsManager(config=str(config), source=str(source))
+            doti = Doti(settings)
+
+            candidates = doti.get_migration_candidates()
+            plan = doti.calculate_migrate_plan(candidates, [candidates[".bashrc"]])
+            doti.process_migrate(plan)
+
+            source_file = source / ".bashrc"
+            backup_file = source / ".bashrc.bkp"
+
+            assert source_file.exists()
+            assert source_file.read_text() == "new content"
+            assert backup_file.exists()
+            assert backup_file.read_text() == "original content"
+
+    def test_process_migrate_respects_source_naming(self):
+        """Test migration respects source's dot naming convention."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir) / "source"
+            target = Path(tmpdir) / "target"
+
+            source.mkdir()
+            target.mkdir()
+
+            (source / "config").mkdir()
+            (source / "config" / "nvim").write_text("existing nvim")
+
+            (target / ".config").mkdir()
+            (target / ".config" / "nvim").write_text("new nvim")
+
+            config = source / "config.yaml"
+            config.write_text(f"dotfiles: {source}\nhome: {target}\n")
+
+            settings = SettingsManager(config=str(config), source=str(source))
+            doti = Doti(settings)
+
+            candidates = doti.get_migration_candidates()
+            plan = doti.calculate_migrate_plan(
+                candidates, [candidates[".config"].children["nvim"]]
+            )
+            doti.process_migrate(plan)
+
+            source_file = source / "config" / "nvim"
+            target_link = target / ".config" / "nvim"
+
+            assert source_file.exists()
+            assert source_file.read_text() == "new nvim"
+            assert target_link.is_symlink()
+            assert target_link.resolve() == source_file

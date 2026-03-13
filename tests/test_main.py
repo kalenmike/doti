@@ -49,7 +49,7 @@ class TestMainEntryPoint:
         with patch.object(sys, "argv", test_args):
             with patch("doti.main.handle_migrate") as mock_handle:
                 main()
-                mock_handle.assert_called_once_with(str(config))
+                mock_handle.assert_called_once_with(str(config), None)
 
     def test_main_with_source_flag(self, temp_dirs, capsys):
         """Test main entry point with source flag."""
@@ -165,11 +165,28 @@ class TestHandleManage:
 class TestHandleMigrate:
     """Tests for the handle_migrate function."""
 
-    def test_handle_migrate_is_placeholder(self):
-        """Test handle_migrate is currently a placeholder."""
-        with patch("builtins.print") as mock_print:
-            handle_migrate(None)
-            mock_print.assert_not_called()
+    @pytest.fixture
+    def temp_dirs(self):
+        """Create temporary source and target directories."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir) / "source"
+            target = Path(tmpdir) / "target"
+            source.mkdir()
+            target.mkdir()
+
+            config = source / "config.yaml"
+            config.write_text(f"dotfiles: {source}\nhome: {target}\n")
+
+            yield source, target, config
+
+    def test_handle_migrate_no_untracked(self, temp_dirs, capsys):
+        """Test handle_migrate when no files exist to migrate."""
+        source, target, config = temp_dirs
+
+        handle_migrate(str(config), None)
+
+        captured = capsys.readouterr()
+        assert "No files found" in captured.out
 
 
 class TestFullUserFlow:
