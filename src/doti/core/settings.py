@@ -8,19 +8,27 @@ import sys
 from typing import Any, Dict, Optional
 
 
-def _load_yaml(path: Optional[Path]) -> Dict[str, Any]:
+def _load_yaml(path: Optional[Path], strict: bool = False) -> Dict[str, Any]:
     """
     Load a YAML file.
 
     Args:
         path: Path to the YAML file.
+        strict: If True, raises FileNotFoundError if path is None or invalid.
 
     Returns:
         Parsed YAML content as a dictionary.
+
+    Raises:
+        FileNotFoundError: If strict is True and the file does not exist.
+        yaml.YAMLError: If the file exists but contains invalid YAML.
     """
-    if path is None:
+    if not path or not path.is_file():
+        if strict:
+            raise FileNotFoundError(f"Required file not found at: {path}")
         return {}
-    with open(path, "r") as f:
+
+    with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 
@@ -113,7 +121,7 @@ class SettingsManager:
             Merged settings dictionary with user values overriding defaults.
         """
         user = _load_yaml(self.config_path) if self.config_path else {}
-        defaults = _load_yaml(self.default_path)
+        defaults = _load_yaml(self.default_path, strict=True)
 
         defaults.update(user)
 
