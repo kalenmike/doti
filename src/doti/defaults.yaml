@@ -16,7 +16,7 @@ home: "~" # Where to install your dotfiles, eg. /home/user
 # ----------------
 confirm_changes: true # Require confirmation before applying changes
 backup_suffix: ".bkp" # Suffix to use for backups in your home
-add_dots: true # Add dots your dotfiles, useful if not hiding files in your repo
+add_dot: true # Add dots your dotfiles, useful if not hiding files in your repo
 
 # ---------
 # I C O N S
