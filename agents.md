@@ -47,6 +47,11 @@ Common flags:
 - `-c, --config <FILE>` - Path to configuration file
 - `-s, --source <FILE>` - Path to dotfiles directory
 
+### Run tests
+```bash
+uv run pytest tests/
+```
+
 ### Type checking
 ```bash
 uv run pyright
@@ -54,7 +59,7 @@ uv run pyright
 
 ### Linting
 ```bash
-uv run ruff check
+uvx ruff check
 ```
 
 ## Dependencies

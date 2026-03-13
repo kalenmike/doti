@@ -9,6 +9,11 @@ dependencies = [
     "questionary>=2.1.1",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
 [tool.uv]
 package = true
 
