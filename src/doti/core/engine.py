@@ -1,9 +1,14 @@
 """Core engine for Doti dotfile management."""
 
+import sys
+
 from doti.utils.data import ConfigNode, ChangeType
 from doti.core.settings import SettingsManager
 from pathlib import Path
 from typing import Callable, Dict, List, Set
+
+
+CONFIG_DIRS = {".config", "AppData", "Library", "Application Support"}
 
 
 class Doti:
@@ -173,13 +178,9 @@ class Doti:
         """
         if not self.cfg.source.exists():
             print("Your source is not configured. Pass a config file to continue.")
-            import sys
-
             sys.exit()
         elif not self.cfg.target.exists():
             print("Your home does not exist. Check your config file.")
-            import sys
-
             sys.exit()
 
         self.scan_source()
@@ -230,6 +231,7 @@ class Doti:
                     new_node = ConfigNode(
                         name=node.name,
                         relative_path=node.relative_path,
+                        target_relative_path=node.target_relative_path,
                         is_dir=node.is_dir,
                         in_source=node.in_source,
                         in_target=node.in_target,
@@ -293,49 +295,98 @@ class Doti:
         Scan the target (home) directory and update the configuration tree.
 
         Identifies symlinks and backups, and detects files only in target.
+        Also scans common config directories for migration purposes.
         """
+        dirs_to_scan = self.allowed_dirs | CONFIG_DIRS
+
         for item in self.cfg.target.iterdir():
-            if not (item.name.startswith(".") or item.name in self.allowed_dirs):
+            if not (item.name.startswith(".") or item.name in dirs_to_scan):
                 continue
 
-            node = self.tree.get(item.name)
-            if not node:
+            existing_node = self.tree.get(item.name)
+            dotted_name = (
+                f".{item.name.lstrip('.')}"
+                if not item.name.startswith(".")
+                else item.name
+            )
+            undotted_name = (
+                item.name.lstrip(".") if item.name.startswith(".") else item.name
+            )
+            source_node = self.tree.get(dotted_name) or self.tree.get(undotted_name)
+
+            if not existing_node:
                 node = ConfigNode(
                     name=item.name,
                     relative_path=item.relative_to(self.cfg.target),
+                    target_relative_path=item.relative_to(self.cfg.target),
                     is_dir=item.is_dir(),
                 )
                 self.tree[item.name] = node
-
+                if source_node:
+                    node.in_source = True
+                    target_parent_rel = item.relative_to(self.cfg.target)
+                    for child_name, child in source_node.children.items():
+                        node.children[child_name] = ConfigNode(
+                            name=child_name,
+                            relative_path=target_parent_rel / child_name,
+                            target_relative_path=target_parent_rel / child_name,
+                            is_dir=child.is_dir,
+                            in_source=True,
+                        )
             else:
+                existing_node.target_relative_path = item.relative_to(self.cfg.target)
                 has_symlink = self.has_symlink(
-                    self.cfg.source / node.relative_path, item
+                    self.cfg.source / existing_node.relative_path, item
                 )
-                node.is_symlink = has_symlink
+                existing_node.is_symlink = has_symlink
                 if has_symlink:
-                    node.has_backup = self.has_backup(item)
+                    existing_node.has_backup = self.has_backup(item)
 
+            node = self.tree[item.name]
             node.in_target = True
 
-            if node.is_dir and item.name in self.allowed_dirs:
-                for sub_item in item.iterdir():
-                    child = node.children.get(sub_item.name)
-                    if not child:
-                        child = ConfigNode(
-                            name=sub_item.name,
-                            relative_path=sub_item.relative_to(self.cfg.target),
-                            is_dir=sub_item.is_dir(),
-                        )
-                        node.children[sub_item.name] = child
-                    else:
-                        has_symlink = self.has_symlink(
-                            self.cfg.source / child.relative_path, sub_item
-                        )
-                        child.is_symlink = has_symlink
-                        if has_symlink:
-                            child.has_backup = self.has_backup(sub_item)
+            if node.is_dir and item.name in dirs_to_scan:
+                self._scan_target_children(node, item, depth=1)
 
-                    child.in_target = True
+    def _scan_target_children(
+        self, parent_node: ConfigNode, parent_path: Path, depth: int = 0
+    ) -> None:
+        """
+        Scan children of a directory in target for migration.
+
+        Args:
+            parent_node: Parent ConfigNode to add children to.
+            parent_path: Path to scan.
+            depth: Current recursion depth (0 = root level, 1 = one level deep).
+        """
+        if depth > 1:
+            return
+
+        for sub_item in parent_path.iterdir():
+            actual_relative_path = sub_item.relative_to(self.cfg.target)
+            child = parent_node.children.get(sub_item.name)
+            if not child:
+                child = ConfigNode(
+                    name=sub_item.name,
+                    relative_path=actual_relative_path,
+                    target_relative_path=actual_relative_path,
+                    is_dir=sub_item.is_dir(),
+                )
+                parent_node.children[sub_item.name] = child
+            else:
+                child.target_relative_path = actual_relative_path
+
+            has_symlink = self.has_symlink(
+                self.cfg.source / child.relative_path, sub_item
+            )
+            child.is_symlink = has_symlink
+            if has_symlink:
+                child.has_backup = self.has_backup(sub_item)
+
+            child.in_target = True
+
+            if child.is_dir:
+                self._scan_target_children(child, sub_item, depth + 1)
 
     def flatten_tree(self, nodes: Dict[str, ConfigNode]) -> List[ConfigNode]:
         """
@@ -428,3 +479,143 @@ class Doti:
     def migrate(self) -> None:
         """Migrate existing configurations to source repository."""
         pass
+
+    def get_untracked(self) -> Dict[str, ConfigNode]:
+        """
+        Get all hidden files/directories in target that are not in source.
+
+        Returns:
+            Dictionary of ConfigNodes for files to migrate.
+        """
+        return self.filter_tree(
+            lambda node: node.in_target and not node.in_source and not node.is_symlink
+        )
+
+    def get_migration_candidates(self) -> Dict[str, ConfigNode]:
+        """
+        Get all files/directories in target that can be migrated.
+
+        This includes all hidden files and contents of config directories,
+        even if they already exist in source. Uses target_relative_path
+        for correct migration paths.
+
+        Returns:
+            Dictionary of ConfigNodes for migration candidates.
+        """
+        candidates = self.filter_tree(
+            lambda node: node.in_target and not node.is_symlink
+        )
+
+        def prepare_for_migration(nodes: Dict[str, ConfigNode]) -> None:
+            for node in nodes.values():
+                if node.target_relative_path:
+                    node.relative_path = node.target_relative_path
+                if node.children:
+                    prepare_for_migration(node.children)
+
+        prepare_for_migration(candidates)
+        return candidates
+
+    def calculate_migrate_plan(
+        self,
+        all_available_nodes: Dict[str, ConfigNode],
+        selected_nodes: List[ConfigNode],
+    ) -> List[ConfigNode]:
+        """
+        Calculate the migration plan for selected nodes.
+
+        Args:
+            all_available_nodes: All untracked nodes in target.
+            selected_nodes: Nodes selected by user for migration.
+
+        Returns:
+            List of nodes to migrate.
+        """
+        selected_paths = {node.relative_path for node in selected_nodes}
+        available_nodes = self.flatten_tree(all_available_nodes)
+
+        plan = []
+        for node in available_nodes:
+            if node.relative_path in selected_paths:
+                node.change = ChangeType.ADD
+                plan.append(node)
+
+        return plan
+
+    def process_migrate(self, nodes: List[ConfigNode]) -> None:
+        """
+        Migrate files from target to source and create symlinks.
+
+        Moves the file/directory from target to source, then creates
+        a symlink at the original location pointing to the new source location.
+
+        If a file already exists in source, it will be backed up first.
+        If source uses different dot naming (e.g., 'config' vs '.config'),
+        the source's existing naming convention is used.
+
+        Args:
+            nodes: List of nodes to migrate.
+        """
+        for node in nodes:
+            target_path = self.cfg.target / node.relative_path
+            source_path = self._get_migration_source_path(node)
+
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if source_path.exists() or source_path.is_symlink():
+                backup_path = self.get_backup_path(source_path)
+                if source_path.is_dir():
+                    import shutil
+
+                    shutil.move(str(source_path), str(backup_path))
+                else:
+                    source_path.rename(backup_path)
+
+            target_path.rename(source_path)
+
+            if target_path.is_symlink():
+                target_path.unlink()
+
+            target_path.symlink_to(source_path)
+
+    def _get_migration_source_path(self, node: ConfigNode) -> Path:
+        """
+        Get the correct source path for migration, respecting source's naming convention.
+
+        If source already has the file/dir (with or without dot prefix), use that.
+        Otherwise, apply the standard dot prefix based on config.
+
+        Args:
+            node: The ConfigNode being migrated.
+
+        Returns:
+            The correct source path to migrate to.
+        """
+        target_path = self.cfg.target / node.relative_path
+
+        first_part = node.relative_path.parts[0] if node.relative_path.parts else ""
+        target_first_part = first_part.lstrip(".")
+
+        source_with_dot = self.cfg.source / f".{target_first_part}"
+        source_without_dot = self.cfg.source / target_first_part
+
+        if source_with_dot.exists() or source_with_dot.is_symlink():
+            rest = (
+                Path(*node.relative_path.parts[1:])
+                if len(node.relative_path.parts) > 1
+                else Path(".")
+            )
+            return source_with_dot / rest if rest != Path(".") else source_with_dot
+
+        if source_without_dot.exists() or source_without_dot.is_symlink():
+            rest = (
+                Path(*node.relative_path.parts[1:])
+                if len(node.relative_path.parts) > 1
+                else Path(".")
+            )
+            return (
+                source_without_dot / rest if rest != Path(".") else source_without_dot
+            )
+
+        prefix = self.get_dot_prefix(node.relative_path)
+        return self.cfg.source / Path(f"{prefix}{node.relative_path}")

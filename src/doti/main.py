@@ -42,24 +42,45 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.action == "migrate":
-        handle_migrate(args.config)
+        handle_migrate(args.config, args.source)
     elif args.action == "manage":
         handle_manage(args.config, args.source)
 
 
-def migrate_to_repo() -> None:
-    """Placeholder for migrating existing configs to repository."""
-    pass
-
-
-def handle_migrate(config_path: Optional[str]) -> None:
+def handle_migrate(config: Optional[str], source: Optional[str]) -> None:
     """
-    Handle the migrate action.
+    Handle the migrate action - migrate existing configs to source repository.
 
     Args:
-        config_path: Optional path to configuration file.
+        config: Optional path to configuration file.
+        source: Optional path to dotfiles source directory.
     """
-    pass
+    cfg = SettingsManager(config, source)
+    tui = TUI(cfg)
+    doti = Doti(cfg)
+
+    candidates = doti.get_migration_candidates()
+
+    if not candidates:
+        print("No files found in target directory to migrate.")
+        return
+
+    selection = tui.render(candidates)
+
+    if selection is None:
+        print("Selection cancelled.")
+        return
+
+    changes = doti.calculate_migrate_plan(candidates, selection)
+
+    if cfg.confirm_changes:
+        tui.print_action_plan(changes)
+        if tui.confirm("Migrate selected files to source?"):
+            doti.process_migrate(changes)
+            print("Migration complete.")
+    else:
+        doti.process_migrate(changes)
+        print("Migration complete.")
 
 
 def handle_manage(config: Optional[str], source: Optional[str]) -> None:
