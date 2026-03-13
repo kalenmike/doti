@@ -87,26 +87,21 @@ class SettingsManager:
         """
         config_location = ".config/doti/settings.yaml"
 
-        if config:
-            tmp_path = Path(config).expanduser().resolve()
-            if tmp_path.is_file():
-                return tmp_path
+        def get_candidates():
+            if config:
+                yield Path(config)
 
-        if source:
-            tmp_path = Path(source) / config_location
-            tmp_path = tmp_path.expanduser().resolve()
-            if tmp_path.is_file():
-                return tmp_path
+            if source:
+                src = Path(source)
+                yield src / config_location
+                yield src / config_location.lstrip(".")
 
-            tmp_path = Path(source) / config_location.removeprefix(".")
-            tmp_path = tmp_path.expanduser().resolve()
-            if tmp_path.is_file():
-                return tmp_path
+            yield Path("~") / config_location
 
-        tmp_path = Path("~") / config_location
-        tmp_path = tmp_path.expanduser().resolve()
-        if tmp_path.is_file():
-            return tmp_path
+        for candidate in get_candidates():
+            path = candidate.expanduser().resolve()
+            if path.is_file():
+                return path
 
         return None
 
