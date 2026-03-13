@@ -17,22 +17,41 @@
 │   ├── core/           # Core modules
 │   │   ├── engine.py   # Main Doti engine
 │   │   ├── ui.py       # TUI interface
-│   │   └── settings.py # Settings manager
-│   └── utils/          # Utility modules
-│       └── data.py
+│   │   └── settings.py  # Settings manager
+│   ├── utils/          # Utility modules
+│   │   └── data.py
+│   └── defaults.yaml   # Default configuration
+├── tests/              # Test suite
+│   ├── test_main.py
+│   ├── test_engine.py
+│   ├── test_ui.py
+│   ├── test_settings.py
+│   ├── test_data.py
+│   └── test_crossplatform.py
 ├── playground/         # Test environment
 │   ├── home/           # Simulated home directory
 │   └── source/         # Simulated dotfile source
-├── pyproject.toml      # Project configuration
+├── pyproject.toml     # Project configuration
+├── Makefile           # Development commands
 └── uv.lock            # Dependency lock file
 ```
 
-## Commands
+## Installation
 
-### Install dependencies
+### Install with uv (recommended)
+```bash
+make install        # Install into virtual environment
+make install-tool   # Install as uv tool
+make install-dev    # Install with dev dependencies
+```
+
+### Install with pip
 ```bash
 uv sync
+pip install -e .
 ```
+
+## Commands
 
 ### Run the application
 ```bash
@@ -49,20 +68,29 @@ Common flags:
 
 ### Run tests
 ```bash
-uv run pytest tests/
-```
-
-### Type checking
-```bash
-uv run pyright
+make test           # Using Makefile
+uv run pytest tests/ -v
 ```
 
 ### Linting
 ```bash
-uvx ruff check
+make lint
+uvx ruff check src/
+```
+
+### Build package
+```bash
+make build
 ```
 
 ## Dependencies
 
+Runtime:
 - pyyaml >= 6.0.3
 - questionary >= 2.1.1
+
+Dev:
+- pytest >= 7.0.0
+- build >= 1.0.0
+- twine >= 5.0.0
+- pip >= 21.0
