@@ -1,0 +1,25 @@
+# ---------------------
+#     D O T I
+# The dotfile manager
+#      v0.1.0
+#   Kalen Michael
+# --------------------
+
+# ----------
+# P A T H S
+# ----------
+dotfiles: "" # Your dotfiles, eg. path/to/git/repo
+home: "~" # Where to install your dotfiles, eg. /home/user
+
+# ----------------
+# S T A N D A R D
+# ----------------
+confirm_changes: true # Require confirmation before applying changes
+backup_suffix: ".bkp" # Suffix to use for backups in your home
+add_dots: true # Add dots your dotfiles, useful if not hiding files in your repo
+
+# ---------
+# I C O N S
+# ---------
+link_icon: "↗" # show that a link already exists
+backup_icon: "⊚" # show that a backp exists
