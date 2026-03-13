@@ -382,11 +382,8 @@ class Doti:
             is_currently_active = node.is_symlink
             is_now_selected = node.relative_path in selected_paths
 
-            if is_now_selected and not is_currently_active:
-                node.change = ChangeType.ADD
-                plan.append(node)
-            elif not is_now_selected and is_currently_active:
-                node.change = ChangeType.REMOVE
+            if is_now_selected != is_currently_active:
+                node.change = ChangeType.ADD if is_now_selected else ChangeType.REMOVE
                 plan.append(node)
 
         return plan
