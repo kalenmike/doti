@@ -74,7 +74,7 @@ def handle_manage(config: Optional[str], source: Optional[str]) -> None:
     tui = TUI(cfg)
     doti = Doti(cfg)
 
-    source_files = doti.get_source_only()
+    source_files = doti.get_source_tree().get_tree()
 
     selection = tui.render(source_files)
 
