@@ -4,6 +4,8 @@
 
 Doti is a powerful, terminal-first tool designed to simplify the management of your configuration files across machines. Stop manually symlinking and worrying about overwriting your precious configs—Doti handles the heavy lifting, backups, and organization for you.
 
+![Doti Demo](assets/doti-demo.gif)
+
 ---
 
 ## Why Doti?
