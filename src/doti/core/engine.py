@@ -188,11 +188,11 @@ class Doti:
         self.scan_target()
 
     def get_source_tree(self) -> ConfigTree:
-        # TODO(zen): add docstrings
+        """Get the source-only configuration tree (files only in source)."""
         return self.tree.get_source_tree()
 
     def get_target_tree(self) -> ConfigTree:
-        # TODO(zen): add docstrings
+        """Get the target-only configuration tree (files only in target)."""
         return self.tree.get_target_tree()
 
     def scan_source(self) -> None:
