@@ -203,7 +203,7 @@ class TestFullUserFlow:
         cfg = SettingsManager(config=str(config), source=str(source))
         doti = Doti(cfg)
 
-        source_files = doti.get_source_only()
+        source_files = doti.get_source_tree().get_tree()
 
         assert len(source_files) >= 1
 
@@ -214,7 +214,7 @@ class TestFullUserFlow:
         cfg = SettingsManager(config=str(config), source=str(source))
         doti = Doti(cfg)
 
-        source_files = doti.get_source_only()
+        source_files = doti.get_source_tree().get_tree()
         flat_files = doti.flatten_tree(source_files)
 
         node = flat_files[0]
@@ -237,7 +237,7 @@ class TestFullUserFlow:
         cfg = SettingsManager(config=str(config), source=str(source))
         doti = Doti(cfg)
 
-        source_files = doti.get_source_only()
+        source_files = doti.get_source_tree().get_tree()
 
         plan = doti.calculate_plan(source_files, [])
         remove_nodes = [n for n in plan if n.change == ChangeType.REMOVE]
