@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 from doti.core.engine import Doti
 from doti.core.settings import SettingsManager
-from doti.utils.data import ConfigNode, ChangeType
+from doti.utils.data import ConfigNode, ChangeType, ConfigTree
 
 
 class TestDoti:
@@ -36,7 +36,7 @@ class TestDoti:
         """Test Doti engine initializes correctly."""
         doti = Doti(settings)
         assert doti.cfg is not None
-        assert isinstance(doti.tree, dict)
+        assert isinstance(doti.tree, ConfigTree)
         assert isinstance(doti.allowed_dirs, set)
 
     def test_exists_file(self, temp_dirs):
@@ -206,20 +206,14 @@ class TestDotiTreeOperations:
 
             yield doti, source, target
 
-    def test_filter_tree_returns_dict(self, populated_doti):
-        """Test filter_tree returns a dictionary."""
-        doti, _, _ = populated_doti
-        result = doti.filter_tree(lambda n: n.in_source)
-        assert isinstance(result, dict)
-
-    def test_get_source_only(self, populated_doti):
+    def test_get_source_tree(self, populated_doti):
         """Test get_source_only returns nodes from source."""
         doti, _, _ = populated_doti
-        result = doti.get_source_only()
+        result = doti.get_source_tree()
 
-        assert ".bashrc" in result
-        assert ".config" in result
-        assert "nvim" in result[".config"].children
+        assert ".bashrc" in result.get_tree()
+        assert ".config" in result.get_tree()
+        assert ".config/nvim" in result.get_tree()
 
     def test_get_target_only_empty(self, populated_doti):
         """Test get_target_only returns empty when target is empty."""
@@ -238,13 +232,13 @@ class TestDotiTreeOperations:
             settings = SettingsManager(config=str(config), source=str(source))
             doti = Doti(settings)
 
-            result = doti.get_target_only()
+            result = doti.get_target_tree().get_tree()
             assert len(result) == 0
 
     def test_flatten_tree(self, populated_doti):
         """Test flatten_tree returns list of all nodes."""
         doti, _, _ = populated_doti
-        source_only = doti.get_source_only()
+        source_only = doti.get_source_tree().get_tree()
         flat = doti.flatten_tree(source_only)
 
         assert len(flat) >= 3
@@ -283,7 +277,7 @@ class TestDotiPlanCalculation:
         """Test calculating plan to add new symlinks."""
         doti, source, _ = doti_with_symlink
 
-        source_only = doti.get_source_only()
+        source_only = doti.get_source_tree().get_tree()
         selected = list(source_only.values())
 
         plan = doti.calculate_plan(source_only, selected)
@@ -311,7 +305,7 @@ class TestDotiPlanCalculation:
             settings = SettingsManager(config=str(config), source=str(source))
             doti = Doti(settings)
 
-            source_only = doti.get_source_only()
+            source_only = doti.get_source_tree().get_tree()
 
             plan = doti.calculate_plan(source_only, [])
             remove_changes = [n for n in plan if n.change == ChangeType.REMOVE]
@@ -321,7 +315,7 @@ class TestDotiPlanCalculation:
         """Test calculating plan with no changes."""
         doti, source, _ = doti_with_symlink
 
-        source_only = doti.get_source_only()
+        source_only = doti.get_source_tree().get_tree()
         selected = list(source_only.values())
 
         plan = doti.calculate_plan(source_only, selected)

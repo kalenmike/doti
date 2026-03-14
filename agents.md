@@ -68,7 +68,11 @@ Common flags:
 
 ### Run tests
 ```bash
-make test           # Using Makefile
+# Using venv directly (recommended - avoids uv sync issues)
+.venv/bin/python -m pytest tests/ -v
+
+# Or using Makefile/uv
+make test
 uv run pytest tests/ -v
 ```
 

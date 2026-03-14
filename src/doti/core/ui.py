@@ -4,6 +4,8 @@ import questionary
 from prompt_toolkit.styles import Style
 import sys
 from typing import Dict, List, Optional, Union
+from pathlib import Path
+from collections import defaultdict
 
 from doti.utils.data import ConfigNode, ChangeType
 from doti.core.settings import SettingsManager
@@ -103,7 +105,7 @@ class TUI:
         self.clear_output()
         return response
 
-    def build_choices(
+    def build_choices_(
         self, nodes: Dict[str, ConfigNode], prefix: str = ""
     ) -> List[Union[str, questionary.Choice]]:
         """
@@ -143,6 +145,51 @@ class TUI:
 
         return choices
 
+    def build_choices(self, nodes) -> List[Union[str, questionary.Choice]]:
+        # 1. Build a temporary lookup: {parent_path: [list_of_children]}
+        parent_map = defaultdict(list)
+        for node in nodes.values():
+            # Get the directory part of the path
+            parent = str(Path(node.relative_path).parent)
+            parent_map[parent].append(node)
+
+        # 2. Define the recursive UI builder
+        def render(parent: str, prefix: str = "", current_depth: int = 0) -> List:
+            if current_depth >= 2:
+                return []
+
+            choices = []
+            children = sorted(parent_map[parent], key=lambda n: (not n.is_dir, n.name))
+
+            for i, node in enumerate(children):
+                is_last = i == len(children) - 1
+                branch = "└── " if is_last else "├── "
+
+                status_icon = f" {self.cfg.link_icon}" if node.is_symlink else ""
+                backup_icon = f" {self.cfg.backup_icon}" if node.has_backup else ""
+                display_name = Path(node.relative_path).name
+
+                if node.is_dir and current_depth == 0:
+                    choices.append(
+                        questionary.Separator(f"  {prefix}{branch}{node.name}/")
+                    )
+                    new_prefix = prefix + ("    " if is_last else "│   ")
+                    choices.extend(
+                        render(str(node.relative_path), new_prefix, current_depth + 1)
+                    )
+                else:
+                    choices.append(
+                        questionary.Choice(
+                            title=f"{prefix}{branch}{display_name}{status_icon}{backup_icon}",
+                            value=node,
+                            checked=node.is_symlink,
+                        )
+                    )
+            return choices
+
+        # 3. Start rendering from the root (parent of all is ".")
+        return render(".")
+
     def get_choices(
         self, nodes: Dict[str, ConfigNode]
     ) -> List[Union[str, questionary.Choice]]:
@@ -156,7 +203,7 @@ class TUI:
             List of choices with target directory header.
         """
         choices = self.build_choices(nodes)
-        choices.insert(0, questionary.Separator(f"\n  {self.cfg.target}/"))
+        choices.insert(0, questionary.Separator(f"\n     {self.cfg.target}/"))
         return choices
 
     def print_action_plan(self, plan: List[ConfigNode]) -> None:
@@ -194,6 +241,8 @@ class TUI:
 
                 action = "[+]" if node.change == ChangeType.ADD else "[-]"
 
+                display_name = Path(node.relative_path).name
+
                 secondary = ""
                 if node.change == ChangeType.ADD and node.in_target:
                     secondary = "[B]"
@@ -207,5 +256,5 @@ class TUI:
                     connector = "└──" if is_last_child else "├──"
                     indent = "    " if is_last_parent else "│   "
 
-                print(f"{indent}{connector} {action} {node.name} {secondary}")
+                print(f"{indent}{connector} {action} {display_name} {secondary}")
         print()

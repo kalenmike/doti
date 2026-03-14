@@ -1,9 +1,9 @@
 """Core engine for Doti dotfile management."""
 
-from doti.utils.data import ConfigNode, ChangeType
+from doti.utils.data import ConfigNode, ChangeType, ConfigTree
 from doti.core.settings import SettingsManager
 from pathlib import Path
-from typing import Callable, Dict, List, Set
+from typing import Dict, List, Set
 
 
 class Doti:
@@ -15,7 +15,7 @@ class Doti:
 
     Attributes:
         cfg: Settings manager instance.
-        tree: Dictionary representing the configuration file tree.
+        tree: ConfigTree representing the configuration file tree.
         allowed_dirs: Set of directory names allowed for recursive scanning.
     """
 
@@ -28,7 +28,7 @@ class Doti:
         """
         self.cfg = settings
 
-        self.tree: Dict[str, ConfigNode] = {}
+        self.tree = ConfigTree(self.cfg.source, self.cfg.target)
         self.allowed_dirs: Set[str] = set()
         self.generate_tree()
 
@@ -105,6 +105,8 @@ class Doti:
             source: Source path (in dotfiles repository).
             target: Target path (in home directory).
         """
+        target.parent.mkdir(parents=True, exist_ok=True)
+
         self.create_backup(target)
         target.symlink_to(source)
 
@@ -185,80 +187,13 @@ class Doti:
         self.scan_source()
         self.scan_target()
 
-    def print_tree(self, tree: Dict[str, ConfigNode]) -> None:
-        """
-        Print a visual representation of the configuration tree.
+    def get_source_tree(self) -> ConfigTree:
+        """Get the source-only configuration tree (files only in source)."""
+        return self.tree.get_source_tree()
 
-        Args:
-            tree: Dictionary of ConfigNodes to display.
-        """
-        print(f"{'Name':<20} | {'Source':<8} | {'Target':<8} | {'Is Dir':<8}")
-        print("-" * 55)
-
-        def walk(nodes: Dict[str, ConfigNode], indent: str = "") -> None:
-            for name, node in nodes.items():
-                src = "Yes" if node.in_source else "No"
-                tgt = "Yes" if node.in_target else "No"
-                is_dir_str = "Yes" if node.is_dir else "No"
-
-                print(
-                    f"{indent}{name:<{20 - len(indent)}} | {src:<8} | {tgt:<8} | {is_dir_str:<8}"
-                )
-
-                if node.is_dir and node.children:
-                    walk(node.children, indent + "  ")
-
-        walk(tree)
-
-    def filter_tree(
-        self, predicate: Callable[[ConfigNode], bool]
-    ) -> Dict[str, ConfigNode]:
-        """
-        Filter the configuration tree by a predicate function.
-
-        Args:
-            predicate: Function that returns True for nodes to include.
-
-        Returns:
-            New dictionary containing only matching nodes.
-        """
-
-        def walk(nodes: Dict[str, ConfigNode]) -> Dict[str, ConfigNode]:
-            filtered = {}
-            for name, node in nodes.items():
-                if predicate(node):
-                    new_node = ConfigNode(
-                        name=node.name,
-                        relative_path=node.relative_path,
-                        is_dir=node.is_dir,
-                        in_source=node.in_source,
-                        in_target=node.in_target,
-                        is_symlink=node.is_symlink,
-                        has_backup=node.has_backup,
-                        children=walk(node.children),
-                    )
-                    filtered[name] = new_node
-            return filtered
-
-        return walk(self.tree)
-
-    def get_source_only(self) -> Dict[str, ConfigNode]:
-        """
-        Get all nodes that exist in the source directory.
-
-        Returns:
-            Dictionary of ConfigNodes from source.
-        """
-        return self.filter_tree(lambda node: node.in_source)
-
-    def get_target_only(self) -> Dict[str, ConfigNode]:
-        """
-        Get all nodes that exist in target but not in source (excluding symlinks).
-
-        Returns:
-            Dictionary of ConfigNodes only in target.
-        """
-        return self.filter_tree(lambda node: node.in_target and not node.is_symlink)
+    def get_target_tree(self) -> ConfigTree:
+        """Get the target-only configuration tree (files only in target)."""
+        return self.tree.get_target_tree()
 
     def scan_source(self) -> None:
         """
@@ -269,24 +204,15 @@ class Doti:
         for item in self.cfg.source.iterdir():
             prefix = self.get_dot_prefix(item.name)
             name = f"{prefix}{item.name}"
-            node = ConfigNode(
-                name=name,
-                relative_path=item.relative_to(self.cfg.source),
-                is_dir=item.is_dir(),
-                in_source=True,
-            )
-            self.tree[name] = node
+
+            node = self.tree.create_and_add_node(name, item, ConfigTree.SOURCE)
 
             if node.is_dir:
                 self.allowed_dirs.add(name)
                 for sub_item in item.iterdir():
-                    child = ConfigNode(
-                        name=sub_item.name,
-                        relative_path=sub_item.relative_to(self.cfg.source),
-                        is_dir=sub_item.is_dir(),
-                        in_source=True,
+                    self.tree.create_and_add_node(
+                        f"{name}/{sub_item.name}", sub_item, ConfigTree.SOURCE
                     )
-                    node.children[sub_item.name] = child
 
     def scan_target(self) -> None:
         """
@@ -295,17 +221,12 @@ class Doti:
         Identifies symlinks and backups, and detects files only in target.
         """
         for item in self.cfg.target.iterdir():
-            if not (item.name.startswith(".") or item.name in self.allowed_dirs):
+            if not item.name.startswith(".") and item.name not in self.allowed_dirs:
                 continue
 
-            node = self.tree.get(item.name)
+            node = self.tree.get_node(item.name)
             if not node:
-                node = ConfigNode(
-                    name=item.name,
-                    relative_path=item.relative_to(self.cfg.target),
-                    is_dir=item.is_dir(),
-                )
-                self.tree[item.name] = node
+                node = self.tree.create_and_add_node(item.name, item, ConfigTree.TARGET)
 
             else:
                 has_symlink = self.has_symlink(
@@ -314,28 +235,25 @@ class Doti:
                 node.is_symlink = has_symlink
                 if has_symlink:
                     node.has_backup = self.has_backup(item)
-
-            node.in_target = True
+                node.in_target = True
 
             if node.is_dir and item.name in self.allowed_dirs:
                 for sub_item in item.iterdir():
-                    child = node.children.get(sub_item.name)
+                    child = self.tree.get_node(f"{item.name}/{sub_item.name}")
                     if not child:
-                        child = ConfigNode(
-                            name=sub_item.name,
-                            relative_path=sub_item.relative_to(self.cfg.target),
-                            is_dir=sub_item.is_dir(),
+                        self.tree.create_and_add_node(
+                            f"{item.name}/{sub_item.name}",
+                            sub_item,
+                            ConfigTree.TARGET,
                         )
-                        node.children[sub_item.name] = child
                     else:
+                        child.in_target = True
                         has_symlink = self.has_symlink(
                             self.cfg.source / child.relative_path, sub_item
                         )
                         child.is_symlink = has_symlink
                         if has_symlink:
                             child.has_backup = self.has_backup(sub_item)
-
-                    child.in_target = True
 
     def flatten_tree(self, nodes: Dict[str, ConfigNode]) -> List[ConfigNode]:
         """
